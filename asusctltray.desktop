@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=AsusCtlTray
+Comment=A tray icon to switch asusctl profiles on the fly
+Exec=asusctltray
+Icon=/usr/share/pixmaps/asusctltray.png
+Terminal=false
+Type=Application
+StartupNotify=false
+Categories=System;Settings;Utility;
+Keywords=asus;control;system;hardware;profiles;

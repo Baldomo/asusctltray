@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+ICON = """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"""
+
+import base64
+import json
+import os
+import signal
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, GdkPixbuf, GLib, Gio
+
+ASUSD_CONF = "/etc/asusd/asusd.conf"
+
+class Icon():
+    icon = None
+    image_pixbuf = None
+    
+    def __init__ (self):
+        stream_active = Gio.MemoryInputStream.new_from_bytes(GLib.Bytes(base64.b64decode(ICON)))
+        self.image_pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream_active)
+        
+        self.icon = Gtk.StatusIcon()
+        self.icon.set_visible(True)
+        self.icon.connect("popup-menu", self.rightclick)
+        self.icon.connect("activate", self.leftclick)
+
+        self.icon.set_from_pixbuf(self.image_pixbuf)
+        
+    def rightclick(self, icon, button, time):
+        self.menu = Gtk.Menu()
+        
+        presets = self.presetlist()
+        
+        self.add_presets(presets, "Profiles:", self.menu)
+        
+        sep = Gtk.SeparatorMenuItem()
+        self.menu.append(sep)
+        
+        qicon = Gtk.MenuItem()
+        qicon.set_label("Quit StatusIcon")
+        qicon.connect("activate", kill)
+        self.menu.append(qicon)
+
+        self.menu.show_all()
+        self.menu.popup(None, None, None, self.icon, 0, time)
+        
+    def leftclick (self, icon):
+        os.system("asusctl profile -n")
+    
+    def add_presets(self, presets, title, menu):
+        if not len(presets):
+            return
+        titem = Gtk.MenuItem()
+        titem.set_label(title)
+        titem.set_sensitive(False)
+        menu.append(titem)
+        for p in presets:
+            pitem = Gtk.MenuItem()
+            pitem.set_label(p)
+            pitem.connect("activate", self.load_preset)
+            menu.append(pitem)
+    
+    def load_preset(self, widget):
+        os.system("asusctl profile %s" % widget.get_label())
+        
+    def presetlist(self):
+        with open(ASUSD_CONF, "r") as file:
+            conf = json.load(file)
+            profiles = conf["power_profiles"].keys()
+            return profiles   
+        
+def kill(obj1, obj2 = False):
+    Gtk.main_quit()
+    
+if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, kill)
+    icon = Icon()
+    Gtk.main()
