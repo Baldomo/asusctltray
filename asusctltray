@@ -50,8 +50,11 @@ from gi.repository import Gtk, GdkPixbuf, GLib, Gio
 ASUSD_CONF = "/etc/asusd/asusd.conf"
 
 class Icon():
+    config = None
+    graphics_modes = ["nvidia", "hybrid", "compute", "integrated"]
     icon = None
     image_pixbuf = None
+    presets = []
     
     def __init__ (self):
         stream_active = Gio.MemoryInputStream.new_from_bytes(GLib.Bytes(base64.b64decode(ICON)))
@@ -67,12 +70,15 @@ class Icon():
     def rightclick(self, icon, button, time):
         self.menu = Gtk.Menu()
         
-        presets = self.presetlist()
+        with open(ASUSD_CONF, "r") as file:
+            self.config = json.load(file)
+        self.presets = self.config["power_profiles"].keys()
         
-        self.add_presets(presets, "Profiles:", self.menu)
-        
-        sep = Gtk.SeparatorMenuItem()
-        self.menu.append(sep)
+        self.get_current_graphics()
+        self.add_graphics("Graphics:")
+        self.menu.append(Gtk.SeparatorMenuItem())
+        self.add_presets("Profiles:")
+        self.menu.append(Gtk.SeparatorMenuItem())
         
         qicon = Gtk.MenuItem()
         qicon.set_label("Quit StatusIcon")
@@ -85,27 +91,62 @@ class Icon():
     def leftclick (self, icon):
         os.system("asusctl profile -n")
     
-    def add_presets(self, presets, title, menu):
-        if not len(presets):
+    def add_presets(self, title):
+        if len(self.presets) == 0:
             return
+
+        current_profile = self.config["active_profile"]
+
         titem = Gtk.MenuItem()
         titem.set_label(title)
         titem.set_sensitive(False)
-        menu.append(titem)
-        for p in presets:
-            pitem = Gtk.MenuItem()
+        self.menu.append(titem)
+        for p in self.presets:
+            pitem = Gtk.RadioMenuItem()
             pitem.set_label(p)
+            pitem.set_active(p == current_profile)
             pitem.connect("activate", self.load_preset)
-            menu.append(pitem)
+            self.menu.append(pitem)
     
     def load_preset(self, widget):
         os.system("asusctl profile %s" % widget.get_label())
-        
-    def presetlist(self):
-        with open(ASUSD_CONF, "r") as file:
-            conf = json.load(file)
-            profiles = conf["power_profiles"].keys()
-            return profiles   
+
+    def add_graphics(self, title):
+        current_graphics = self.get_current_graphics()
+        titem = Gtk.MenuItem()
+        titem.set_label(title)
+        titem.set_sensitive(False)
+        self.menu.append(titem)
+        for g in self.graphics_modes:
+            gitem = Gtk.RadioMenuItem()
+            gitem.set_label(g)
+            gitem.set_active(g == current_graphics)
+            gitem.connect("activate", self.switch_graphics)
+            self.menu.append(gitem)
+
+    def get_current_graphics(self):
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        proxy: Gio.DBusProxy = Gio.DBusProxy.new_sync(
+            bus, Gio.DBusProxyFlags.NONE, None,
+            "org.asuslinux.Daemon", 
+            "/org/asuslinux/Gfx",
+            "org.asuslinux.Daemon", None)
+        res = proxy.call_sync("Vendor", None, Gio.DBusCallFlags.NO_AUTO_START, 2000, None)
+        return res.unpack()[0]
+    
+    def switch_graphics(self, widget):
+        dialog = Gtk.MessageDialog(
+            destroy_with_parent=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text="Graphics: %s" % widget.get_label()
+        )
+        dialog.format_secondary_text("Switching graphics will reboot the system. Proceed?")
+        resp = dialog.run()
+        if resp == Gtk.ResponseType.OK:
+            os.system("asusctl graphics -m -f %s")
+        else:
+            dialog.destroy()
         
 def kill(obj1, obj2 = False):
     Gtk.main_quit()
