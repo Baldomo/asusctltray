@@ -144,7 +144,7 @@ class Icon():
         dialog.format_secondary_text("Switching graphics will reboot the system. Proceed?")
         resp = dialog.run()
         if resp == Gtk.ResponseType.OK:
-            os.system("asusctl graphics -m -f %s")
+            os.system("asusctl graphics -f -m %s" % widget.get_label())
         else:
             dialog.destroy()
         
