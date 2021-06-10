@@ -5,6 +5,7 @@ import os
 import signal
 
 import gi
+
 gi.require_version("Gtk", "3.0")
 gi.require_version("AppIndicator3", "0.1")
 from gi.repository import AppIndicator3 as appindicator
@@ -14,44 +15,49 @@ ASUSD_CONF = "/etc/asusd/asusd.conf"
 
 ICON_BASE_PATH = "/usr/share/pixmaps"
 
-class TrayIcon():
+
+class TrayIcon:
     config = None
     graphics_modes = ["nvidia", "hybrid", "compute", "integrated"]
     icon = None
     image_pixbuf = None
     presets = []
-    
-    def __init__ (self):
-        self.icon = appindicator.Indicator.new("asusctltray", Gtk.STOCK_INFO, appindicator.IndicatorCategory.SYSTEM_SERVICES)
+
+    def __init__(self):
+        self.icon = appindicator.Indicator.new(
+            "asusctltray",
+            Gtk.STOCK_INFO,
+            appindicator.IndicatorCategory.SYSTEM_SERVICES,
+        )
         self.icon.set_status(appindicator.IndicatorStatus.ACTIVE)
         self.build_menu()
         self.icon.set_menu(self.menu)
         self.icon.set_icon_theme_path(ICON_BASE_PATH)
         self.icon.set_icon_full("asusctltray", "")
-        
+
     def build_menu(self):
         self.menu = Gtk.Menu()
-        
+
         with open(ASUSD_CONF, "r") as file:
             self.config = json.load(file)
         self.presets = self.config["power_profiles"].keys()
-        
+
         self.get_current_graphics()
         self.add_graphics("Graphics")
         self.menu.append(Gtk.SeparatorMenuItem())
         self.add_presets("Profiles")
         self.menu.append(Gtk.SeparatorMenuItem())
-        
+
         qicon = Gtk.MenuItem()
         qicon.set_label("Quit StatusIcon")
         qicon.connect("activate", kill)
         self.menu.append(qicon)
 
         self.menu.show_all()
-        
-    def leftclick (self, icon):
+
+    def leftclick(self, icon):
         os.system("asusctl profile -n")
-    
+
     def add_presets(self, title):
         if len(self.presets) == 0:
             return
@@ -62,15 +68,18 @@ class TrayIcon():
         titem.set_label(title)
         titem.set_sensitive(False)
         self.menu.append(titem)
+        group = []
         for p in self.presets:
-            pitem = Gtk.RadioMenuItem()
-            pitem.set_label(p)
+            pitem = Gtk.RadioMenuItem.new_with_label(group, p)
+            group = pitem.get_group()
             pitem.set_active(p == current_profile)
             pitem.connect("activate", self.load_preset)
             self.menu.append(pitem)
-    
+
     def load_preset(self, widget):
-        os.system("asusctl profile %s" % widget.get_label())
+        # This is called when the widget is deselected too, so check if active
+        if widget.get_active():
+            os.system("asusctl profile %s" % widget.get_label())
 
     def add_graphics(self, title):
         current_graphics = self.get_current_graphics()
@@ -78,9 +87,10 @@ class TrayIcon():
         titem.set_label(title)
         titem.set_sensitive(False)
         self.menu.append(titem)
+        group = []
         for g in self.graphics_modes:
-            gitem = Gtk.RadioMenuItem()
-            gitem.set_label(g)
+            gitem = Gtk.RadioMenuItem.new_with_label(group, g)
+            group = gitem.get_group()
             gitem.set_active(g == current_graphics)
             gitem.connect("activate", self.switch_graphics)
             self.menu.append(gitem)
@@ -88,11 +98,17 @@ class TrayIcon():
     def get_current_graphics(self):
         bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
         proxy: Gio.DBusProxy = Gio.DBusProxy.new_sync(
-            bus, Gio.DBusProxyFlags.NONE, None,
-            "org.asuslinux.Daemon", 
+            bus,
+            Gio.DBusProxyFlags.NONE,
+            None,
+            "org.asuslinux.Daemon",
             "/org/asuslinux/Gfx",
-            "org.asuslinux.Daemon", None)
-        res = proxy.call_sync("Vendor", None, Gio.DBusCallFlags.NO_AUTO_START, 2000, None)
+            "org.asuslinux.Daemon",
+            None,
+        )
+        res = proxy.call_sync(
+            "Vendor", None, Gio.DBusCallFlags.NO_AUTO_START, 2000, None
+        )
         return res.unpack()[0]
 
     # def get_current_graphics(self):
@@ -103,27 +119,34 @@ class TrayIcon():
     #     )
     #     # TODO: wait for signals?
     #     return proxy.Vendor(dbus_interface="org.asuslinux.Daemon")
-    
+
     def switch_graphics(self, widget):
+        # This is called when the widget is deselected too, so check if active
+        if not widget.get_active():
+            return
         dialog = Gtk.MessageDialog(
             destroy_with_parent=True,
             message_type=Gtk.MessageType.WARNING,
             buttons=Gtk.ButtonsType.OK_CANCEL,
-            text="Graphics: %s" % widget.get_label()
+            text="Graphics: %s" % widget.get_label(),
         )
-        dialog.format_secondary_text("Switching graphics could require logout/reboot. Proceed?")
+        dialog.format_secondary_text(
+            "Switching graphics could require logout/reboot. Proceed?"
+        )
         resp = dialog.run()
         if resp == Gtk.ResponseType.OK:
             os.system("asusctl graphics -f -m %s" % widget.get_label())
         else:
             dialog.destroy()
 
-    def _dbus_switch_graphics():
+    def _dbus_switch_graphics(self):
         return
-        
-def kill(obj1, obj2 = False):
+
+
+def kill(obj1, obj2=False):
     Gtk.main_quit()
-    
+
+
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     signal.signal(signal.SIGINT, kill)
