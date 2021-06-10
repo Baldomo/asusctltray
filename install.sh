@@ -6,5 +6,5 @@ fi
 
 cp asusctltray /usr/local/bin
 chmod a+x /usr/local/bin/asusctltray
-cp asusctltray.png /usr/share/pixmaps
+cp asusctltray.svg /usr/share/pixmaps
 cp asusctltray.desktop /usr/share/applications
