@@ -3,6 +3,7 @@ import dbus
 import json
 import os
 import signal
+import subprocess
 
 import gi
 
@@ -12,18 +13,38 @@ from gi.repository import AppIndicator3 as appindicator
 from gi.repository import Gtk, GLib, Gio
 
 ASUSD_CONF = "/etc/asusd/asusd.conf"
-
 ICON_BASE_PATH = "/usr/share/pixmaps"
+GFX_MODES = {
+    0: "nvidia",
+    1: "integrated",
+    2: "compute",
+    3: "vfio",
+    4: "hybrid",
+}
+GFX_USER_ACTION = {
+    0: "logout",
+    1: "reboot",
+    2: "integrated",
+    3: "none",
+}
 
 
 class TrayIcon:
     config = None
-    graphics_modes = ["nvidia", "hybrid", "compute", "integrated"]
+    gfx_proxy = None
     icon = None
     image_pixbuf = None
     presets = []
 
     def __init__(self):
+        with open(ASUSD_CONF, "r") as file:
+            self.config = json.load(file)
+        self.presets = self.config["power_profiles"].keys()
+
+        bus = dbus.SystemBus()
+        real_proxy = bus.get_object("org.asuslinux.Daemon", "/org/asuslinux/Gfx")
+        self.gfx_proxy = dbus.Interface(real_proxy, dbus_interface="org.asuslinux.Daemon")
+
         self.icon = appindicator.Indicator.new(
             "asusctltray",
             Gtk.STOCK_INFO,
@@ -38,11 +59,6 @@ class TrayIcon:
     def build_menu(self):
         self.menu = Gtk.Menu()
 
-        with open(ASUSD_CONF, "r") as file:
-            self.config = json.load(file)
-        self.presets = self.config["power_profiles"].keys()
-
-        self.get_current_graphics()
         self.add_graphics("Graphics")
         self.menu.append(Gtk.SeparatorMenuItem())
         self.add_presets("Profiles")
@@ -54,9 +70,6 @@ class TrayIcon:
         self.menu.append(qicon)
 
         self.menu.show_all()
-
-    def leftclick(self, icon):
-        os.system("asusctl profile -n")
 
     def add_presets(self, title):
         if len(self.presets) == 0:
@@ -83,42 +96,25 @@ class TrayIcon:
 
     def add_graphics(self, title):
         current_graphics = self.get_current_graphics()
+
         titem = Gtk.MenuItem()
         titem.set_label(title)
         titem.set_sensitive(False)
         self.menu.append(titem)
         group = []
-        for g in self.graphics_modes:
+        for g in GFX_MODES.values():
+            # Skip if vfio is disabled in configuration
+            if not self.config["gfx_vfio_enable"] and g == "vfio":
+                continue
             gitem = Gtk.RadioMenuItem.new_with_label(group, g)
             group = gitem.get_group()
             gitem.set_active(g == current_graphics)
-            gitem.connect("activate", self.switch_graphics)
+            gitem.connect("activate", self.switch_graphics_dbus)
             self.menu.append(gitem)
 
     def get_current_graphics(self):
-        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
-        proxy: Gio.DBusProxy = Gio.DBusProxy.new_sync(
-            bus,
-            Gio.DBusProxyFlags.NONE,
-            None,
-            "org.asuslinux.Daemon",
-            "/org/asuslinux/Gfx",
-            "org.asuslinux.Daemon",
-            None,
-        )
-        res = proxy.call_sync(
-            "Vendor", None, Gio.DBusCallFlags.NO_AUTO_START, 2000, None
-        )
-        return res.unpack()[0]
-
-    # def get_current_graphics(self):
-    #     bus = dbus.SystemBus()
-    #     proxy = bus.get_object(
-    #         "org.asuslinux.Daemon",
-    #         "/org/asuslinux/Gfx"
-    #     )
-    #     # TODO: wait for signals?
-    #     return proxy.Vendor(dbus_interface="org.asuslinux.Daemon")
+        vendor = self.gfx_proxy.Vendor()
+        return GFX_MODES[vendor]
 
     def switch_graphics(self, widget):
         # This is called when the widget is deselected too, so check if active
@@ -127,7 +123,7 @@ class TrayIcon:
         dialog = Gtk.MessageDialog(
             destroy_with_parent=True,
             message_type=Gtk.MessageType.WARNING,
-            buttons=Gtk.ButtonsType.OK_CANCEL,
+            buttons=Gtk.ButtonsType.OK,
             text="Graphics: %s" % widget.get_label(),
         )
         dialog.format_secondary_text(
@@ -139,8 +135,38 @@ class TrayIcon:
         else:
             dialog.destroy()
 
-    def _dbus_switch_graphics(self):
-        return
+    def switch_graphics_dbus(self, widget):
+        # This is called when the widget is deselected too, so check if active
+        if not widget.get_active():
+            return
+
+        if self.get_current_graphics() == widget.get_label():
+            return
+        
+        mode_ind = [k for (k, v) in GFX_MODES.items() if v == widget.get_label()][0]
+        action_ind = self.gfx_proxy.SetVendor(mode_ind)
+        action = GFX_USER_ACTION[action_ind]
+        if action == "integrated":
+            self.run_dialog("You must switch to Integrated mode before switching to Compute or VFIO.")
+        elif action != "none":
+            self.run_dialog(f"Graphics changed to {widget.get_label()}. A {action} is required (save your files!).")
+            if action == "reboot":
+                os.system("systemctl reboot")
+            elif action == "logout":
+                res = subprocess.run(["loginctl", "session-status", "--no-pager"], stdout=subprocess.PIPE)
+                session_n = res.stdout.decode("utf-8").split(" ")[0]
+                os.system(f"loginctl terminate-session {session_n}")
+
+    def run_dialog(self, msg, btn_text="Do it!"):
+        dialog = Gtk.MessageDialog(
+            destroy_with_parent=True,
+            message_type=Gtk.MessageType.WARNING,
+            text="asusctltray",
+        )
+        dialog.add_buttons(btn_text, Gtk.ResponseType.CLOSE)
+        dialog.format_secondary_text(msg)
+        dialog.run()
+        dialog.destroy()
 
 
 def kill(obj1, obj2=False):
