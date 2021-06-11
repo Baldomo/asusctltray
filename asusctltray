@@ -65,7 +65,7 @@ class TrayIcon:
         self.menu.append(Gtk.SeparatorMenuItem())
 
         qicon = Gtk.MenuItem()
-        qicon.set_label("Quit StatusIcon")
+        qicon.set_label("Quit asusctltray")
         qicon.connect("activate", kill)
         self.menu.append(qicon)
 
