@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-import dbus
 import json
 import os
 import signal
 import subprocess
 
+import dbus
 import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("AppIndicator3", "0.1")
 from gi.repository import AppIndicator3 as appindicator
-from gi.repository import Gtk, GLib, Gio
+from gi.repository import Gio, GLib, Gtk
 
 ASUSD_CONF = "/etc/asusd/asusd.conf"
 ICON_BASE_PATH = "/usr/share/pixmaps"
@@ -32,6 +32,7 @@ GFX_USER_ACTION = {
 class TrayIcon:
     config = None
     gfx_proxy = None
+    profile_proxy = None
     icon = None
     image_pixbuf = None
     presets = []
@@ -42,8 +43,14 @@ class TrayIcon:
         self.presets = self.config["power_profiles"].keys()
 
         bus = dbus.SystemBus()
-        real_proxy = bus.get_object("org.asuslinux.Daemon", "/org/asuslinux/Gfx")
-        self.gfx_proxy = dbus.Interface(real_proxy, dbus_interface="org.asuslinux.Daemon")
+        self.gfx_proxy = dbus.Interface(
+            bus.get_object("org.asuslinux.Daemon", "/org/asuslinux/Gfx"),
+            dbus_interface="org.asuslinux.Daemon",
+        )
+        self.profile_proxy = dbus.Interface(
+            bus.get_object("org.asuslinux.Daemon", "/org/asuslinux/Profile"),
+            dbus_interface="org.asuslinux.Daemon",
+        )
 
         self.icon = appindicator.Indicator.new(
             "asusctltray",
@@ -92,7 +99,7 @@ class TrayIcon:
     def load_preset(self, widget):
         # This is called when the widget is deselected too, so check if active
         if widget.get_active():
-            os.system("asusctl profile %s" % widget.get_label())
+            self.profile_proxy.SetProfile(widget.get_label())
 
     def add_graphics(self, title):
         current_graphics = self.get_current_graphics()
@@ -142,31 +149,48 @@ class TrayIcon:
 
         if self.get_current_graphics() == widget.get_label():
             return
-        
+
         mode_ind = [k for (k, v) in GFX_MODES.items() if v == widget.get_label()][0]
         action_ind = self.gfx_proxy.SetVendor(mode_ind)
         action = GFX_USER_ACTION[action_ind]
         if action == "integrated":
-            self.run_dialog("You must switch to Integrated mode before switching to Compute or VFIO.")
+            dialog = self.build_dialog(
+                "You must switch to Integrated mode before switching to Compute or VFIO.",
+                "Got it",
+            )
+            dialog.run()
+            dialog.destroy()
         elif action != "none":
-            self.run_dialog(f"Graphics changed to {widget.get_label()}. A {action} is required (save your files!).")
+            dialog = self.build_dialog(
+                f"Graphics changed to {widget.get_label()}. A {action} is required (save your files!)."
+            )
+            dialog.add_buttons("Later", Gtk.ResponseType.CLOSE)
             if action == "reboot":
-                os.system("systemctl reboot")
+                dialog.add_buttons("Reboot the system", Gtk.ResponseType.OK)
+                resp = dialog.run()
+                if resp == Gtk.ResponseType.OK:
+                    os.system("systemctl reboot")
+                dialog.destroy()
             elif action == "logout":
-                res = subprocess.run(["loginctl", "session-status", "--no-pager"], stdout=subprocess.PIPE)
-                session_n = res.stdout.decode("utf-8").split(" ")[0]
-                os.system(f"loginctl terminate-session {session_n}")
+                dialog.add_buttons("Log me out", Gtk.ResponseType.OK)
+                resp = dialog.run()
+                if resp == Gtk.ResponseType.OK:
+                    res = subprocess.run(
+                        ["loginctl", "session-status", "--no-pager"],
+                        stdout=subprocess.PIPE,
+                    )
+                    session_n = res.stdout.decode("utf-8").split(" ")[0]
+                    os.system(f"loginctl terminate-session {session_n}")
+                dialog.destroy()
 
-    def run_dialog(self, msg, btn_text="Do it!"):
+    def build_dialog(self, msg, btn_text=None):
         dialog = Gtk.MessageDialog(
             destroy_with_parent=True,
             message_type=Gtk.MessageType.WARNING,
             text="asusctltray",
         )
-        dialog.add_buttons(btn_text, Gtk.ResponseType.CLOSE)
         dialog.format_secondary_text(msg)
-        dialog.run()
-        dialog.destroy()
+        return dialog
 
 
 def kill(obj1, obj2=False):
