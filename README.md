@@ -22,7 +22,9 @@ Unofficial support for tray icons can be easily brought back to the shell with [
 Moreover, GNOME users should check out the excellent [asusctl-gex](https://gitlab.com/asus-linux/asusctl-gex/-/tree/main) shell extension from the maintainers of asusctl.
 
 ## Usage
-On click: open context menu with all the profiles, selecting one will apply it (calls `asusctl profile <profile>`).
+> ⚠️ `pkexec` is required for boost toggling
+
+On click: open context menu with all the profiles, selecting one will apply it (`dbus` is used extensively for both profile switching and GFX control).
 
 ## Screenshots
 ![tray.png](screenshots/tray.png)
