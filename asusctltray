@@ -34,17 +34,18 @@ gi.require_version("AppIndicator3", "0.1")
 from gi.repository import AppIndicator3 as appindicator
 from gi.repository import Gio, GLib, Gtk, GObject
 
-ICON_BASE_PATH = "/usr/share/pixmaps"
-GFX_CONF = "/etc/supergfxd.conf"
-PROFILE_CONF = "/etc/asusd/profile.conf"
-GFX_MODES = {
+from typing import Dict, List
+
+ICON_BASE_PATH: str = "/usr/share/pixmaps"
+GFX_CONF: str = "/etc/supergfxd.conf"
+GFX_MODES: Dict[int, str] = {
     0: "nvidia",
     1: "integrated",
     2: "compute",
     3: "vfio",
     4: "hybrid",
 }
-GFX_USER_ACTION = {
+GFX_USER_ACTION: Dict[int, str] = {
     0: "logout",
     1: "reboot",
     2: "integrated",
@@ -53,20 +54,19 @@ GFX_USER_ACTION = {
 
 
 class TrayIcon:
-    gfx_config = None
+    gfx_config: Dict = None
 
-    gfx_proxy = None
-    power_profile_props_proxy = None
-    presets = []
+    gfx_proxy: dbus.Interface = None
+    power_profile_props_proxy: dbus.Interface = None
+    presets: List[str] = []
 
-    # Dict[Gtk.RadioMenuItem, str]
     # Used to store original profile names for radio widgets
-    raw_names = {}
+    raw_names: Dict[Gtk.RadioMenuItem, str] = {}
 
-    icon = None
-    image_pixbuf = None
+    # Holds the Indicator instance
+    icon: appindicator.Indicator = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         with open(GFX_CONF, "r") as file:
             self.gfx_config = json.load(file)
 
@@ -80,8 +80,7 @@ class TrayIcon:
             dbus_interface=dbus.PROPERTIES_IFACE,
         )
 
-        # TODO: figure out order
-        # balance performance quiet
+        # TODO: asusctl profiles and ppd profiles are differentz
         self.presets = [
             str(p["Profile"])
             for p in self.power_profile_props_proxy.Get(
@@ -100,7 +99,8 @@ class TrayIcon:
         self.icon.set_icon_theme_path(ICON_BASE_PATH)
         self.icon.set_icon_full("asusctltray", "")
 
-    def build_menu(self):
+    def build_menu(self) -> None:
+        """Create and populate the main menu for the tray icon"""
         self.menu = Gtk.Menu()
 
         self.add_graphics("Graphics")
@@ -112,16 +112,17 @@ class TrayIcon:
 
         qicon = Gtk.MenuItem()
         qicon.set_label("Quit asusctltray")
-        qicon.connect("activate", kill)
+        qicon.connect("activate", Gtk.main_quit)
         self.menu.append(qicon)
 
         self.menu.show_all()
 
-    def _humanize(self, s):
+    def _humanize(self, s: str) -> str:
         """Humanize profile name, e.g. 'power-saver' -> 'Power saver'"""
         return s.replace("-", " ").capitalize()
 
-    def add_presets(self, title):
+    def add_presets(self, title: str) -> None:
+        """Load power profiles and add a RadioMenuItem for each to the menu"""
         if len(self.presets) == 0:
             return
 
@@ -136,7 +137,9 @@ class TrayIcon:
 
         group = []
         for p in self.presets:
-            pitem = Gtk.RadioMenuItem.new_with_label(group=group, label=self._humanize(p))
+            pitem = Gtk.RadioMenuItem.new_with_label(
+                group=group, label=self._humanize(p)
+            )
             self.raw_names[pitem] = p
             pitem.set_active(p == current_profile)
 
@@ -144,11 +147,12 @@ class TrayIcon:
             group = pitem.get_group()
             self.menu.append(pitem)
 
-    def load_preset(self, widget):
+    def load_preset(self, widget: Gtk.MenuItem) -> None:
+        """Activate a power profile, called when a RadioMenuItem is activated"""
         # This is called when the widget is deselected too, so check if active
         if not widget.get_active():
             return
-            
+
         # TODO: use signals when they're actually implemented by asusctl
         self.power_profile_props_proxy.Set(
             "net.hadess.PowerProfiles",
@@ -156,7 +160,8 @@ class TrayIcon:
             self.raw_names[widget],
         )
 
-    def add_graphics(self, title):
+    def add_graphics(self, title: str) -> None:
+        """Load graphics modes and add a RadioMenuItem for each to the menu"""
         current_graphics = self.get_current_graphics()
 
         titem = Gtk.MenuItem()
@@ -174,15 +179,18 @@ class TrayIcon:
             gitem.connect("activate", self.switch_graphics)
             self.menu.append(gitem)
 
-    def get_current_graphics(self):
+    def get_current_graphics(self) -> str:
+        """Returns the currently active graphics mode"""
         vendor = self.gfx_proxy.Vendor()
         return GFX_MODES[vendor]
 
-    def switch_graphics(self, widget):
+    def switch_graphics(self, widget: Gtk.MenuItem) -> None:
+        """Activate a graphics mode, called when a RadioMenuItem is activated"""
         # This is called when the widget is deselected too, so check if active
         if not widget.get_active():
             return
 
+        # Return if the currently active profile is already selected in the menu
         if self.get_current_graphics() == widget.get_label():
             return
 
@@ -192,8 +200,7 @@ class TrayIcon:
         action = GFX_USER_ACTION[action_ind]
         if action == "integrated":
             dialog = self._build_dialog(
-                "You must switch to Integrated mode before switching to Compute or VFIO.",
-                "Got it",
+                "You must switch to Integrated mode before switching to Compute or VFIO."
             )
             dialog.run()
             dialog.destroy()
@@ -220,7 +227,8 @@ class TrayIcon:
                     os.system(f"loginctl terminate-session {session_n}")
                 dialog.destroy()
 
-    def _build_dialog(self, msg, btn_text=None):
+    def _build_dialog(self, msg: str) -> None:
+        """Utility to quickly build a MessageDialog with a standard format"""
         dialog = Gtk.MessageDialog(
             destroy_with_parent=True,
             message_type=Gtk.MessageType.WARNING,
@@ -229,11 +237,13 @@ class TrayIcon:
         dialog.format_secondary_text(msg)
         return dialog
 
-    def _is_boost_enabled(self):
+    def _is_boost_enabled(self) -> bool:
+        """Returns True if CPU turbo boost is enabled"""
         data = open("/sys/devices/system/cpu/cpufreq/boost", "r").read()[:-1]
         return int(data) == 1
 
-    def _enable_boost(self, widget):
+    def _enable_boost(self, widget: Gtk.MenuItem) -> None:
+        """Enables boost if not already enabled"""
         # This is called when the widget is deselected too, so check if active
         if not widget.get_active():
             return
@@ -242,16 +252,18 @@ class TrayIcon:
 
         os.system("echo 1 | pkexec tee /sys/devices/system/cpu/cpufreq/boost")
 
-    def _disable_boost(self, widget):
+    def _disable_boost(self, widget: Gtk.MenuItem) -> None:
+        """Disables boost if not already disabled"""
         # This is called when the widget is deselected too, so check if active
         if not widget.get_active():
             return
         if widget.get_active() != self._is_boost_enabled():
             return
-            
+
         os.system("echo 0 | pkexec tee /sys/devices/system/cpu/cpufreq/boost")
 
-    def setup_boost_menu(self, title):
+    def setup_boost_menu(self, title: str) -> None:
+        """Adds the boost submenu to the main menu"""
         group = []
         enable = Gtk.RadioMenuItem.new_with_label(group, label="Enabled")
         group = enable.get_group()
@@ -277,11 +289,7 @@ class TrayIcon:
         self.menu.append(bitem)
 
 
-def kill(obj1, obj2=False):
-    Gtk.main_quit()
-
-
 if __name__ == "__main__":
-    signal.signal(signal.SIGINT, kill)
+    signal.signal(signal.SIGINT, Gtk.main_quit)
     TrayIcon()
     Gtk.main()
