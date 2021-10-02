@@ -219,13 +219,17 @@ class TrayIcon:
                 dialog.add_buttons("Log me out", Gtk.ResponseType.OK)
                 resp = dialog.run()
                 if resp == Gtk.ResponseType.OK:
-                    res = subprocess.run(
-                        ["loginctl", "session-status", "--no-pager"],
-                        stdout=subprocess.PIPE,
-                    )
-                    session_n = res.stdout.decode("utf-8").split(" ")[0]
-                    os.system(f"loginctl terminate-session {session_n}")
+                    self._logout()
                 dialog.destroy()
+
+    def _logout(self) -> None:
+        """Requests user logout to logind via dbus"""
+        session_proxy = dbus.Interface(
+            dbus.SystemBus().get_object("org.freedesktop.login1", "/org/freedesktop/login1/session/self"),
+            dbus_interface="org.freedesktop.login1.Session",
+        )
+
+        session_proxy.Terminate()
 
     def _build_dialog(self, msg: str) -> None:
         """Utility to quickly build a MessageDialog with a standard format"""
