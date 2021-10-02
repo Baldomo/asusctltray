@@ -25,16 +25,16 @@ import json
 import os
 import signal
 import subprocess
+from typing import Dict, List
 
 import dbus
 import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("AppIndicator3", "0.1")
-from gi.repository import AppIndicator3 as appindicator
-from gi.repository import Gio, GLib, Gtk, GObject
 
-from typing import Dict, List
+from gi.repository import AppIndicator3 as appindicator
+from gi.repository import Gio, GLib, GObject, Gtk
 
 ICON_BASE_PATH: str = "/usr/share/pixmaps"
 GFX_CONF: str = "/etc/supergfxd.conf"
@@ -99,6 +99,18 @@ class TrayIcon:
         self.icon.set_icon_theme_path(ICON_BASE_PATH)
         self.icon.set_icon_full("asusctltray", "")
 
+    @staticmethod
+    def on_widget_active_strict(callback) -> None:
+        """Decorator to inject a check for widget activation, calls the function only when the widget is active"""
+
+        def inner(self, widget: Gtk.MenuItem):
+            # Return if the widget is not actually active
+            if not widget.get_active():
+                return
+            callback(self, widget)
+
+        return inner
+
     def build_menu(self) -> None:
         """Create and populate the main menu for the tray icon"""
         self.menu = Gtk.Menu()
@@ -147,12 +159,9 @@ class TrayIcon:
             group = pitem.get_group()
             self.menu.append(pitem)
 
+    @on_widget_active_strict
     def load_preset(self, widget: Gtk.MenuItem) -> None:
         """Activate a power profile, called when a RadioMenuItem is activated"""
-        # This is called when the widget is deselected too, so check if active
-        if not widget.get_active():
-            return
-
         # TODO: use signals when they're actually implemented by asusctl
         self.power_profile_props_proxy.Set(
             "net.hadess.PowerProfiles",
@@ -184,11 +193,9 @@ class TrayIcon:
         vendor = self.gfx_proxy.Vendor()
         return GFX_MODES[vendor]
 
+    @on_widget_active_strict
     def switch_graphics(self, widget: Gtk.MenuItem) -> None:
         """Activate a graphics mode, called when a RadioMenuItem is activated"""
-        # This is called when the widget is deselected too, so check if active
-        if not widget.get_active():
-            return
 
         # Return if the currently active profile is already selected in the menu
         if self.get_current_graphics() == widget.get_label():
@@ -225,7 +232,9 @@ class TrayIcon:
     def _logout(self) -> None:
         """Requests user logout to logind via dbus"""
         session_proxy = dbus.Interface(
-            dbus.SystemBus().get_object("org.freedesktop.login1", "/org/freedesktop/login1/session/self"),
+            dbus.SystemBus().get_object(
+                "org.freedesktop.login1", "/org/freedesktop/login1/session/self"
+            ),
             dbus_interface="org.freedesktop.login1.Session",
         )
 
@@ -246,21 +255,17 @@ class TrayIcon:
         data = open("/sys/devices/system/cpu/cpufreq/boost", "r").read()[:-1]
         return int(data) == 1
 
+    @on_widget_active_strict
     def _enable_boost(self, widget: Gtk.MenuItem) -> None:
         """Enables boost if not already enabled"""
-        # This is called when the widget is deselected too, so check if active
-        if not widget.get_active():
-            return
         if widget.get_active() == self._is_boost_enabled():
             return
 
         os.system("echo 1 | pkexec tee /sys/devices/system/cpu/cpufreq/boost")
 
+    @on_widget_active_strict
     def _disable_boost(self, widget: Gtk.MenuItem) -> None:
         """Disables boost if not already disabled"""
-        # This is called when the widget is deselected too, so check if active
-        if not widget.get_active():
-            return
         if widget.get_active() != self._is_boost_enabled():
             return
 
