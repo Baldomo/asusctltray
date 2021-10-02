@@ -53,6 +53,18 @@ GFX_USER_ACTION: Dict[int, str] = {
 }
 
 
+def on_widget_active_strict(callback) -> None:
+    """Decorator to inject a check for widget activation, calls the function only when the widget is active"""
+
+    def inner(self, widget: Gtk.MenuItem):
+        # Return if the widget is not actually active
+        if not widget.get_active():
+            return
+        callback(self, widget)
+
+    return inner
+
+
 class TrayIcon:
     gfx_config: Dict = None
 
@@ -98,18 +110,6 @@ class TrayIcon:
         self.icon.set_menu(self.menu)
         self.icon.set_icon_theme_path(ICON_BASE_PATH)
         self.icon.set_icon_full("asusctltray", "")
-
-    @staticmethod
-    def on_widget_active_strict(callback) -> None:
-        """Decorator to inject a check for widget activation, calls the function only when the widget is active"""
-
-        def inner(self, widget: Gtk.MenuItem):
-            # Return if the widget is not actually active
-            if not widget.get_active():
-                return
-            callback(self, widget)
-
-        return inner
 
     def build_menu(self) -> None:
         """Create and populate the main menu for the tray icon"""
