@@ -92,7 +92,7 @@ class TrayIcon:
             dbus_interface=dbus.PROPERTIES_IFACE,
         )
 
-        # TODO: asusctl profiles and ppd profiles are differentz
+        # TODO: asusctl profiles and ppd profiles are different
         self.presets = [
             str(p["Profile"])
             for p in self.power_profile_props_proxy.Get(
@@ -220,7 +220,7 @@ class TrayIcon:
                 dialog.add_buttons("Reboot the system", Gtk.ResponseType.OK)
                 resp = dialog.run()
                 if resp == Gtk.ResponseType.OK:
-                    os.system("systemctl reboot")
+                    self._reboot()
                 dialog.destroy()
             elif action == "logout":
                 dialog.add_buttons("Log me out", Gtk.ResponseType.OK)
@@ -228,6 +228,17 @@ class TrayIcon:
                 if resp == Gtk.ResponseType.OK:
                     self._logout()
                 dialog.destroy()
+
+    def _reboot(self) -> None:
+        """Requests system reboot to logind via dbus"""
+        login1_proxy = dbus.Interface(
+            dbus.SystemBus().get_object(
+                "org.freedesktop.login1", "/org/freedesktop/login1"
+            ),
+            dbus_interface="org.freedesktop.login1.Manager",
+        )
+
+        login1_proxy.Reboot(True)
 
     def _logout(self) -> None:
         """Requests user logout to logind via dbus"""
