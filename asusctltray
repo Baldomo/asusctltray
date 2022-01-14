@@ -37,13 +37,14 @@ from gi.repository import Gtk
 
 ICON_BASE_PATH: str = "/usr/share/pixmaps"
 GFX_CONF: str = "/etc/supergfxd.conf"
+# From https://gitlab.com/asus-linux/asusctl-gex/-/blob/main/src/modules/gfx_mode_dbus.ts
 GFX_MODES: Dict[int, str] = {
-    0: "nvidia",
-    1: "integrated",
-    2: "compute",
-    3: "vfio",
-    4: "egpu",
-    5: "hybrid",
+    0: "hybrid",
+    1: "nvidia",
+    2: "integrated",
+    3: "compute",
+    4: "vfio",
+    5: "egpu",
 }
 GFX_USER_ACTION: Dict[int, str] = {
     0: "logout",
@@ -54,7 +55,8 @@ GFX_USER_ACTION: Dict[int, str] = {
 
 
 def on_widget_active_strict(callback) -> None:
-    """Decorator to inject a check for widget activation, calls the function only when the widget is active"""
+    """Decorator to inject a check for widget activation, calls the function only when 
+    the widget is active"""
 
     def inner(self, widget: Gtk.MenuItem):
         # Return if the widget is not actually active
@@ -195,7 +197,8 @@ class TrayIcon:
         vendor = self.gfx_proxy.Vendor()
         if vendor not in GFX_MODES.keys():
             dialog = self._build_dialog(
-                f"Unrecognized graphics mode with index <span font_family='monospace'>{int(vendor)}</span>.\n"
+                f"Unrecognized graphics mode with index "
+                "<span font_family='monospace'>{int(vendor)}</span>.\n"
                 "\nPlease open a new issue on Github with this bug report!"
             )
             dialog.add_buttons("Open Github issues page", Gtk.ResponseType.OK)
@@ -231,7 +234,8 @@ class TrayIcon:
             dialog.destroy()
         elif action != "none":
             dialog = self._build_dialog(
-                f"Graphics changed to {widget.get_label()}. A {action} is required (save your files!)."
+                f"Graphics changed to {widget.get_label()}. "
+                "A {action} is required (save your files!)."
             )
             dialog.add_buttons("Later", Gtk.ResponseType.CLOSE)
             if action == "reboot":
