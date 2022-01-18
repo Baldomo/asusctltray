@@ -36,7 +36,6 @@ from gi.repository import AppIndicator3 as appindicator
 from gi.repository import Gtk
 
 ICON_BASE_PATH: str = "/usr/share/pixmaps"
-GFX_CONF: str = "/etc/supergfxd.conf"
 # From https://gitlab.com/asus-linux/asusctl-gex/-/blob/main/src/modules/gfx_mode_dbus.ts
 GFX_MODES: Dict[int, str] = {
     0: "hybrid",
@@ -70,8 +69,6 @@ def on_widget_active_strict(callback) -> None:
 class TrayIcon:
     """Contains the logic for a tray icon and manages profile/gfx switching"""
 
-    gfx_config: Dict = None
-
     gfx_proxy: dbus.Interface = None
     power_profile_props_proxy: dbus.Interface = None
     presets: List[str] = []
@@ -83,9 +80,6 @@ class TrayIcon:
     icon: appindicator.Indicator = None
 
     def __init__(self) -> None:
-        with open(GFX_CONF, "r") as file:
-            self.gfx_config = json.load(file)
-
         bus = dbus.SystemBus()
         self.gfx_proxy = dbus.Interface(
             bus.get_object("org.supergfxctl.Daemon", "/org/supergfxctl/Gfx"),
@@ -176,29 +170,30 @@ class TrayIcon:
     def add_graphics(self, title: str) -> None:
         """Load graphics modes and add a RadioMenuItem for each to the menu"""
         current_graphics = self.get_current_graphics()
+        supported_modes = [int(m) for m in self.gfx_proxy.Supported()]
 
         titem = Gtk.MenuItem()
         titem.set_label(title)
         titem.set_sensitive(False)
         self.menu.append(titem)
         group = []
-        for mode in GFX_MODES.values():
-            # Skip if vfio is disabled in configuration
-            if not self.gfx_config["gfx_vfio_enable"] and mode == "vfio":
+        for mode_ind, mode in GFX_MODES.items():
+            # Skip unsupported modes
+            if not mode_ind in supported_modes:
                 continue
             gitem = Gtk.RadioMenuItem.new_with_label(group, mode)
             group = gitem.get_group()
-            gitem.set_active(mode == current_graphics)
+            gitem.set_active(mode_ind == current_graphics)
             gitem.connect("activate", self.switch_graphics)
             self.menu.append(gitem)
 
-    def get_current_graphics(self) -> str:
+    def get_current_graphics(self) -> int:
         """Returns the currently active graphics mode"""
-        vendor = self.gfx_proxy.Vendor()
-        if vendor not in GFX_MODES.keys():
+        mode = self.gfx_proxy.Mode()
+        if mode not in GFX_MODES.keys():
             dialog = self._build_dialog(
                 f"Unrecognized graphics mode with index "
-                "<span font_family='monospace'>{int(vendor)}</span>.\n"
+                "<span font_family='monospace'>{int(mode)}</span>.\n"
                 "\nPlease open a new issue on Github with this bug report!"
             )
             dialog.add_buttons("Open Github issues page", Gtk.ResponseType.OK)
@@ -206,17 +201,18 @@ class TrayIcon:
             if resp == Gtk.ResponseType.OK:
                 webbrowser.open_new_tab("https://github.com/Baldomo/asusctltray/issues")
             dialog.destroy()
-        return GFX_MODES[vendor]
+        return mode
 
     @on_widget_active_strict
     def switch_graphics(self, widget: Gtk.MenuItem) -> None:
         """Activate a graphics mode, called when a RadioMenuItem is activated"""
 
         # Return if the currently active profile is already selected in the menu
-        if self.get_current_graphics() == widget.get_label():
+        if GFX_MODES[self.get_current_graphics()] == widget.get_label():
             return
 
         # Kinda horrible but it's fine because GFX_MODES is hardcoded
+        # Gets the newly selected mode index from GFX_MODES
         mode_ind = next(
             (k for (k, v) in GFX_MODES.items() if v == widget.get_label()), None
         )
@@ -224,7 +220,7 @@ class TrayIcon:
             # This shouldn't happen
             return
 
-        action_ind = self.gfx_proxy.SetVendor(mode_ind)
+        action_ind = self.gfx_proxy.SetMode(mode_ind)
         action = GFX_USER_ACTION[action_ind]
         if action == "integrated":
             dialog = self._build_dialog(
