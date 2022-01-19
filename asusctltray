@@ -192,8 +192,8 @@ class TrayIcon:
         mode = self.gfx_proxy.Mode()
         if mode not in GFX_MODES.keys():
             dialog = self._build_dialog(
-                f"Unrecognized graphics mode with index "
-                "<span font_family='monospace'>{int(mode)}</span>.\n"
+                "Unrecognized graphics mode with index "
+                f"<span font_family='monospace'>{int(mode)}</span>.\n"
                 "\nPlease open a new issue on Github with this bug report!"
             )
             dialog.add_buttons("Open Github issues page", Gtk.ResponseType.OK)
