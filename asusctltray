@@ -76,6 +76,8 @@ class TrayIcon:
     # Used to store original profile names for radio widgets
     raw_names: Dict[Gtk.RadioMenuItem, str] = {}
 
+    # Holds the GTK Menu instance
+    menu: Gtk.Menu = None
     # Holds the Indicator instance
     icon: appindicator.Indicator = None
 

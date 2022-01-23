@@ -1,12 +1,14 @@
 # asusctltray
 This is a simple tray widget based on `appindicator` which lets the user change their ROG laptop power profiles and graphics mode on the fly. Easy turbo boost toggling is also included (it was temporarily removed from `asusctl`).
 
-Most of the functionality is provided through `dbus` method calls.
+All functionality is provided through `dbus` method calls.
 
 ## Table of contents
 - [asusctltray](#asusctltray)
   - [Table of contents](#table-of-contents)
   - [Installation](#installation)
+    - [Arch](#arch)
+    - [Manual install](#manual-install)
     - [Note for GNOME 40+ users](#note-for-gnome-40-users)
   - [Usage](#usage)
   - [Screenshots](#screenshots)
@@ -14,6 +16,10 @@ Most of the functionality is provided through `dbus` method calls.
 ## Installation
 This project depends on `AppIndicator3`. Refer to your distro's documentation/software repositories to install it (both the runtime and development files are needed).
 
+### Arch
+[`asusctltray-git`](https://aur.archlinux.org/packages/asusctltray-git/) on the AUR (requires `supergfxctl` available on the [official `asus-linux` g14 repo](https://asus-linux.org/wiki/arch-guide/#repo))
+
+### Manual install
 Running the script `install.sh` as root will install `asusctltray` to `/usr/local/bin`, the icon to `/usr/share/pixmaps` and the `asusctl.desktop` to `/usr/share/applications`. This makes the tray icon available in application menus.
 
 ### Note for GNOME 40+ users
