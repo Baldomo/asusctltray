@@ -20,11 +20,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import json
 import os
 import signal
-from typing import Dict, List
 import webbrowser
+from typing import *
 
 import dbus
 import gi
@@ -33,7 +32,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("AppIndicator3", "0.1")
 
 from gi.repository import AppIndicator3 as appindicator
-from gi.repository import Gtk
+from gi.repository import Gtk, GObject
 
 ICON_BASE_PATH: str = "/usr/share/pixmaps"
 # From https://gitlab.com/asus-linux/asusctl-gex/-/blob/main/src/modules/gfx_mode_dbus.ts
@@ -51,10 +50,16 @@ GFX_USER_ACTION: Dict[int, str] = {
     2: "integrated",
     3: "none",
 }
+GFX_POWER: Dict[int, str] = {
+    0: "active",
+    1: "suspended",
+    2: "off",
+    3: "unknown",
+}
 
 
 def on_widget_active_strict(callback) -> None:
-    """Decorator to inject a check for widget activation, calls the function only when 
+    """Decorator to inject a check for widget activation, calls the function only when
     the widget is active"""
 
     def inner(self, widget: Gtk.MenuItem):
@@ -142,8 +147,7 @@ class TrayIcon:
             "net.hadess.PowerProfiles", "ActiveProfile"
         )
 
-        titem = Gtk.MenuItem()
-        titem.set_label(title)
+        titem = Gtk.MenuItem.new_with_label(title)
         titem.set_sensitive(False)
         self.menu.append(titem)
 
@@ -170,20 +174,25 @@ class TrayIcon:
         )
 
     def add_graphics(self, title: str) -> None:
-        """Load graphics modes and add a RadioMenuItem for each to the menu"""
+        """Load graphics modes and power status and add a RadioMenuItem for each to the menu"""
+        titem = Gtk.MenuItem.new_with_label(title)
+        titem.set_sensitive(False)
+        self.menu.append(titem)
+
+        power = GFX_POWER[self.gfx_proxy.Power()]
+        pitem = Gtk.MenuItem.new_with_label(f"dGPU: {power}")
+        self.menu.append(pitem)
+        self.menu.append(Gtk.SeparatorMenuItem())
+
         current_graphics = self.get_current_graphics()
         supported_modes = [int(m) for m in self.gfx_proxy.Supported()]
 
-        titem = Gtk.MenuItem()
-        titem.set_label(title)
-        titem.set_sensitive(False)
-        self.menu.append(titem)
         group = []
         for mode_ind, mode in GFX_MODES.items():
             # Skip unsupported modes
             if not mode_ind in supported_modes:
                 continue
-            gitem = Gtk.RadioMenuItem.new_with_label(group, mode)
+            gitem = Gtk.RadioMenuItem.new_with_label(group=group, label=mode)
             group = gitem.get_group()
             gitem.set_active(mode_ind == current_graphics)
             gitem.connect("activate", self.switch_graphics)
@@ -233,7 +242,7 @@ class TrayIcon:
         elif action != "none":
             dialog = self._build_dialog(
                 f"Graphics changed to {widget.get_label()}. "
-                "A {action} is required (save your files!)."
+                f"A {action} is required (save your files!)."
             )
             dialog.add_buttons("Later", Gtk.ResponseType.CLOSE)
             if action == "reboot":
