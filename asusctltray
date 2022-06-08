@@ -31,8 +31,9 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("AppIndicator3", "0.1")
 
+from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import AppIndicator3 as appindicator
-from gi.repository import Gtk, GObject
+from gi.repository import GLib, Gtk
 
 ICON_BASE_PATH: str = "/usr/share/pixmaps"
 # From https://gitlab.com/asus-linux/asusctl-gex/-/blob/main/src/modules/gfx_mode_dbus.ts
@@ -44,18 +45,33 @@ GFX_MODES: Dict[int, str] = {
     4: "vfio",
     5: "egpu",
 }
+
 GFX_USER_ACTION: Dict[int, str] = {
     0: "logout",
     1: "reboot",
     2: "integrated",
     3: "none",
 }
+
 GFX_POWER: Dict[int, str] = {
     0: "active",
     1: "suspended",
     2: "off",
     3: "unknown",
 }
+
+BOOST_CONTROL: List[Dict[str, str]] = [
+    {
+        "path": "/sys/devices/system/cpu/intel_pstate/no_turbo",
+        "on": "echo 0 | pkexec tee {path}",
+        "off": "echo 1 | pkexec tee {path}",
+    },
+    {
+        "path": "/sys/devices/system/cpu/cpufreq/boost",
+        "on": "echo 1 | pkexec tee {path}",
+        "off": "echo 0 | pkexec tee {path}",
+    },
+]
 
 
 def on_widget_active_strict(callback) -> None:
@@ -78,15 +94,26 @@ class TrayIcon:
     power_profile_props_proxy: dbus.Interface = None
     presets: List[str] = []
 
+    # Holds a reference to the right boost control command (see globals) for this platform
+    boost_ctrl: Dict[str, str] = None
+
     # Used to store original profile names for radio widgets
     raw_names: Dict[Gtk.RadioMenuItem, str] = {}
 
+    # Holds a reference to the global loop running, to call loop.quit() when necessary
+    loop: GLib.MainLoop = None
     # Holds the GTK Menu instance
     menu: Gtk.Menu = None
     # Holds the Indicator instance
     icon: appindicator.Indicator = None
+    # Is set to True when Gtk needs to stop the main loop
+    quitting: bool = False
 
-    def __init__(self) -> None:
+    state: Dict[str, Any] = {}
+
+    def __init__(self, loop: GLib.MainLoop) -> None:
+        self.loop = loop
+
         bus = dbus.SystemBus()
         self.gfx_proxy = dbus.Interface(
             bus.get_object("org.supergfxctl.Daemon", "/org/supergfxctl/Gfx"),
@@ -105,6 +132,12 @@ class TrayIcon:
             )
         ]
 
+        for control in BOOST_CONTROL:
+            if os.path.isfile(control["path"]):
+                self.boost_ctrl = control
+
+        self.update()
+
         self.icon = appindicator.Indicator.new(
             "asusctltray",
             Gtk.STOCK_INFO,
@@ -119,37 +152,51 @@ class TrayIcon:
     def build_menu(self) -> None:
         """Create and populate the main menu for the tray icon"""
         self.menu = Gtk.Menu()
+        # self.menu = Gtk.Menu.new_from_model(Gio.Menu())
 
         self.add_graphics("Graphics")
         self.menu.append(Gtk.SeparatorMenuItem())
         self.add_presets("Power profiles")
         self.menu.append(Gtk.SeparatorMenuItem())
-        self.setup_boost_menu("Boost")
-        self.menu.append(Gtk.SeparatorMenuItem())
+        if self.boost_ctrl:
+            self.setup_boost_menu("Boost")
+            self.menu.append(Gtk.SeparatorMenuItem())
 
         qicon = Gtk.MenuItem()
         qicon.set_label("Quit asusctltray")
-        qicon.connect("activate", Gtk.main_quit)
+        qicon.connect("activate", self._quit)
         self.menu.append(qicon)
 
         self.menu.show_all()
 
+    def _quit(self, _) -> None:
+        """Simple callback wrapper for GLib.MainLoop.quit()"""
+        self.loop.quit()
+
     def _humanize(self, name: str) -> str:
         """Humanize profile name, e.g. 'power-saver' -> 'Power saver'"""
         return name.replace("-", " ").capitalize()
+
+    def update(self) -> None:
+        self.state["graphics"] = self.get_current_graphics()
+        self.state["power"] = self.gfx_proxy.Power()
+        self.state["profile"] = self.power_profile_props_proxy.Get(
+            "net.hadess.PowerProfiles", "ActiveProfile"
+        )
+        self.build_menu()
 
     def add_presets(self, title: str) -> None:
         """Load power profiles and add a RadioMenuItem for each to the menu"""
         if len(self.presets) == 0:
             return
 
-        current_profile = self.power_profile_props_proxy.Get(
-            "net.hadess.PowerProfiles", "ActiveProfile"
-        )
-
         titem = Gtk.MenuItem.new_with_label(title)
         titem.set_sensitive(False)
         self.menu.append(titem)
+
+        self.power_profile_props_proxy.connect_to_signal(
+            "PropertiesChanged", self.signal_preset_callback
+        )
 
         group = []
         for preset in self.presets:
@@ -157,7 +204,7 @@ class TrayIcon:
                 group=group, label=self._humanize(preset)
             )
             self.raw_names[pitem] = preset
-            pitem.set_active(preset == current_profile)
+            pitem.set_active(preset == self.state["profile"])
 
             pitem.connect("activate", self.load_preset)
             group = pitem.get_group()
@@ -173,18 +220,31 @@ class TrayIcon:
             self.raw_names[widget],
         )
 
+    def signal_preset_callback(self, iface_name, changed, _):
+        self.state["profile"] = self.power_profile_props_proxy.Get(
+            "net.hadess.PowerProfiles", "ActiveProfile"
+        )
+
+    def signal_graphics_callback(self, iface_name, changed, _):
+        # self.state["graphics"] = self.power_profile_props_proxy.Get(
+        #     "net.hadess.PowerProfiles", "ActiveProfile"
+        # )
+        # print(f"Profile updated: got {self.state['profile']}, changed: {changed}")
+        # TODO: supergfxctl does not have a signal handler for gfx power change
+        pass
+
     def add_graphics(self, title: str) -> None:
         """Load graphics modes and power status and add a RadioMenuItem for each to the menu"""
         titem = Gtk.MenuItem.new_with_label(title)
         titem.set_sensitive(False)
         self.menu.append(titem)
 
-        power = GFX_POWER[self.gfx_proxy.Power()]
+        power = GFX_POWER[self.state["power"]]
         pitem = Gtk.MenuItem.new_with_label(f"dGPU: {power}")
         self.menu.append(pitem)
         self.menu.append(Gtk.SeparatorMenuItem())
 
-        current_graphics = self.get_current_graphics()
+        # current_graphics = self.get_current_graphics()
         supported_modes = [int(m) for m in self.gfx_proxy.Supported()]
 
         group = []
@@ -194,7 +254,7 @@ class TrayIcon:
                 continue
             gitem = Gtk.RadioMenuItem.new_with_label(group=group, label=mode)
             group = gitem.get_group()
-            gitem.set_active(mode_ind == current_graphics)
+            gitem.set_active(mode_ind == self.state["graphics"])
             gitem.connect("activate", self.switch_graphics)
             self.menu.append(gitem)
 
@@ -212,6 +272,7 @@ class TrayIcon:
             if resp == Gtk.ResponseType.OK:
                 webbrowser.open_new_tab("https://github.com/Baldomo/asusctltray/issues")
             dialog.destroy()
+            self._quit()
         return mode
 
     @on_widget_active_strict
@@ -293,24 +354,28 @@ class TrayIcon:
 
     def _is_boost_enabled(self) -> bool:
         """Returns True if CPU turbo boost is enabled"""
-        data = open("/sys/devices/system/cpu/cpufreq/boost", "r").read()[:-1]
+        data = open(self.boost_ctrl["path"], "r").read()[:-1]
         return int(data) == 1
 
     @on_widget_active_strict
     def _enable_boost(self, widget: Gtk.MenuItem) -> None:
         """Enables boost if not already enabled"""
-        if widget.get_active() == self._is_boost_enabled():
+        if self._is_boost_enabled():
             return
 
-        os.system("echo 1 | pkexec tee /sys/devices/system/cpu/cpufreq/boost")
+        status = os.system(self.boost_ctrl["on"].format(path=self.boost_ctrl["path"]))
+        if os.waitstatus_to_exitcode(status) != 0:
+            widget.set_active(False)
 
     @on_widget_active_strict
     def _disable_boost(self, widget: Gtk.MenuItem) -> None:
         """Disables boost if not already disabled"""
-        if widget.get_active() != self._is_boost_enabled():
+        if not self._is_boost_enabled():
             return
 
-        os.system("echo 0 | pkexec tee /sys/devices/system/cpu/cpufreq/boost")
+        status = os.system(self.boost_ctrl["off"].format(path=self.boost_ctrl["path"]))
+        if os.waitstatus_to_exitcode(status) != 0:
+            widget.set_active(False)
 
     def setup_boost_menu(self, title: str) -> None:
         """Adds the boost submenu to the main menu"""
@@ -340,6 +405,7 @@ class TrayIcon:
 
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGINT, Gtk.main_quit)
-    TrayIcon()
-    Gtk.main()
+    DBusGMainLoop(set_as_default=True)
+    loop = GLib.MainLoop()
+    TrayIcon(loop)
+    loop.run()
