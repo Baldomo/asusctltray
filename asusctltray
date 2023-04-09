@@ -570,13 +570,13 @@ class GfxController(Controller):
                 dialog.add_buttons("Reboot the system", Gtk.ResponseType.OK)
                 resp = dialog.run()
                 if resp == Gtk.ResponseType.OK:
-                    System.reboot()
+                    Util.reboot()
                 dialog.destroy()
             elif action == "logout":
                 dialog.add_buttons("Log me out", Gtk.ResponseType.OK)
                 resp = dialog.run()
                 if resp == Gtk.ResponseType.OK:
-                    System.logout()
+                    Util.logout()
                 dialog.destroy()
 
 
