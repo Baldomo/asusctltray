@@ -21,21 +21,20 @@
 # SOFTWARE.
 
 import os
-import signal
 import webbrowser
 from abc import ABC, abstractmethod
-from collections.abc import Hashable, MutableMapping, Set
-from typing import *
+from collections.abc import MutableMapping, Set
 
 import dbus
+from dbus.mainloop.glib import DBusGMainLoop
+
 import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("AppIndicator3", "0.1")
 
-from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import AppIndicator3 as appindicator
-from gi.repository import GLib, Gtk
+from gi.repository import AppIndicator3 as appindicator  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
 
 
 class Bijection(Set):
@@ -154,14 +153,14 @@ GFX_MODES = Bijection(
     }
 )
 
-GFX_USER_ACTION: Dict[int, str] = {
+GFX_USER_ACTION: dict[int, str] = {
     0: "logout",
     1: "integrated",
     2: "asusgpumuxdisable",
     3: "none",
 }
 
-GFX_POWER: Dict[int, str] = {
+GFX_POWER: dict[int, str] = {
     0: "active",
     1: "suspended",
     2: "off",
@@ -172,13 +171,13 @@ GFX_POWER: Dict[int, str] = {
 
 FAN_CURVES = Bijection(
     {
-        0: "balanced",
-        1: "performance",
-        2: "quiet",
+        0: "Balanced",
+        1: "Performance",
+        2: "Quiet",
     }
 )
 
-BOOST_CONTROL: List[Dict[str, str]] = [
+BOOST_CONTROL: list[dict[str, str]] = [
     {
         "path": "/sys/devices/system/cpu/intel_pstate/no_turbo",
         "on": "echo 0 | pkexec tee {path}",
@@ -237,7 +236,7 @@ class Util:
         """Requests user logout to logind via dbus"""
         session_proxy = dbus.Interface(
             dbus.SystemBus().get_object(
-                "org.freedesktop.login1", "/org/freedesktop/login1/session/self"
+                "org.freedesktop.login1", "/org/freedesktop/login1/session/auto"
             ),
             dbus_interface="org.freedesktop.login1.Session",
         )
@@ -249,36 +248,36 @@ class Controller(ABC):
     """Abstract base class for submenu controllers"""
 
     @property
-    def pre_menu(self) -> List[Gtk.MenuItem]:
+    def pre_menu(self) -> list[Gtk.MenuItem]:
         """Items to be appended before the submenu
 
         Returns
         -------
-        - `List[Gtk.MenuItem]`
+        - `list[Gtk.MenuItem]`
             The list of instantiated MenuItem's to be appended
         """
         return []
 
     @property
-    def post_menu(self) -> List[Gtk.MenuItem]:
+    def post_menu(self) -> list[Gtk.MenuItem]:
         """Items to be appended after the submenu
 
         Returns
         -------
-        - `List[Gtk.MenuItem]`
+        - `list[Gtk.MenuItem]`
             The list of instantiated MenuItem's to be appended
         """
         return []
 
     @property
     @abstractmethod
-    def items(self) -> List[str]:
+    def items(self) -> list[str]:
         """The main item labels for the submenu items. They will be
         created as RadioMenuItem's
 
         Returns
         -------
-        - `List[str]`
+        - `list[str]`
             A list of items labels to convert in RadioMenuItem's
         """
         return []
@@ -387,10 +386,6 @@ class BoostController(Controller):
         self.off = off
 
     @property
-    def items(self):
-        return []
-
-    @property
     def title(self):
         return ""
 
@@ -466,7 +461,7 @@ class FanCurveController(Controller):
 
     @property
     def items(self):
-        return [FAN_CURVES[i] for i in self.proxy.Profiles()]
+        return [str(i) for i in self.proxy.Profiles()]
 
     @property
     def proxy(self):
@@ -483,11 +478,11 @@ class FanCurveController(Controller):
 
     @property
     def active_item(self):
-        return self.items[self.proxy.ActiveProfile()]
+        return str(self.proxy.ActiveProfile())
 
     @on_widget_active_strict
     def on_activation(self, widget: Gtk.MenuItem):
-        self.proxy.SetActiveProfile(FAN_CURVES[widget.get_label()])
+        self.proxy.SetActiveProfile(widget.get_label())
 
 
 class GfxController(Controller):
@@ -627,7 +622,7 @@ class TrayIcon:
     """Contains the logic for a tray icon and manages profile/gfx switching"""
 
     # Holds a reference to the right boost control command (see globals) for this platform
-    boost_ctrl: Dict[str, str] = None
+    boost_ctrl: dict[str, str] = None
 
     # Holds a reference to the global loop running, to call loop.quit() when necessary
     loop: GLib.MainLoop = None
