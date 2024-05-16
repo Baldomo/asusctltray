@@ -99,6 +99,12 @@ class Bijection(Set):
         def __repr__(self):
             return "{}({})".format(type(self).__name__, repr(self._dict))
 
+        def keys(self):
+            return self._dict.keys()
+
+        def values(self):
+            return self._dict.values()
+
     def __init__(self, items=None):
         self.left = self.Map()
         self.right = self.Map(self.left)
@@ -141,6 +147,14 @@ class Bijection(Set):
 
 ICON_BASE_PATH: str = "/usr/share/pixmaps"
 
+FAN_PROFILES = Bijection(
+    {
+        0: "Balanced",
+        1: "Performance",
+        2: "Quiet",
+    }
+)
+
 # From https://gitlab.com/asus-linux/supergfxctl-gex/-/blob/main/src/modules/labels.ts
 GFX_MODES = Bijection(
     {
@@ -168,14 +182,6 @@ GFX_POWER: dict[int, str] = {
     4: "active",
     5: "active",
 }
-
-FAN_CURVES = Bijection(
-    {
-        0: "Balanced",
-        1: "Performance",
-        2: "Quiet",
-    }
-)
 
 BOOST_CONTROL: list[dict[str, str]] = [
     {
@@ -456,33 +462,70 @@ class BoostController(Controller):
         pass
 
 
-class FanCurveController(Controller):
-    """Controller for the "Fan curves" submenu"""
+class CPUProfileController(Controller):
+    """Controller for the "CPU profiles" submenu"""
 
     @property
     def items(self):
-        return [str(i) for i in self.proxy.Profiles()]
+        return list(FAN_PROFILES.left.values())
 
     @property
     def proxy(self):
         return dbus.Interface(
-            dbus.SystemBus().get_object(
-                "org.asuslinux.Daemon", "/org/asuslinux/Profile"
-            ),
-            dbus_interface="org.asuslinux.Daemon",
+            dbus.SystemBus().get_object("org.asuslinux.Daemon", "/org/asuslinux"),
+            dbus_interface="org.asuslinux.FanCurves",
         )
 
     @property
     def title(self):
-        return "Fan curves"
+        return "CPU fan profile"
 
     @property
     def active_item(self):
-        return str(self.proxy.ActiveProfile())
+        profile_list = list(FAN_PROFILES.left.items())
+        for profile_index, profile_name in profile_list[::-1]:
+            data = self.proxy.FanCurveData(profile_index)
+            if bool(data[0][3]):
+                return profile_name
+        return ""
 
     @on_widget_active_strict
     def on_activation(self, widget: Gtk.MenuItem):
-        self.proxy.SetActiveProfile(widget.get_label())
+        active_index = FAN_PROFILES[widget.get_label()]
+        self.proxy.SetProfileFanCurveEnabled(active_index, "CPU", True)
+
+
+class GPUProfileController(Controller):
+    """Controller for the "GPU profiles" submenu"""
+
+    @property
+    def items(self):
+        return list(FAN_PROFILES.left.values())
+
+    @property
+    def proxy(self):
+        return dbus.Interface(
+            dbus.SystemBus().get_object("org.asuslinux.Daemon", "/org/asuslinux"),
+            dbus_interface="org.asuslinux.FanCurves",
+        )
+
+    @property
+    def title(self):
+        return "GPU fan profile"
+
+    @property
+    def active_item(self):
+        profile_list = list(FAN_PROFILES.left.items())
+        for profile_index, profile_name in profile_list[::-1]:
+            data = self.proxy.FanCurveData(profile_index)
+            if bool(data[1][3]):
+                return profile_name
+        return ""
+
+    @on_widget_active_strict
+    def on_activation(self, widget: Gtk.MenuItem):
+        active_index = FAN_PROFILES[widget.get_label()]
+        self.proxy.SetProfileFanCurveEnabled(active_index, "GPU", True)
 
 
 class GfxController(Controller):
@@ -663,7 +706,10 @@ class TrayIcon:
         PowerProfilesController().attach(self.menu)
         self.menu.append(Gtk.SeparatorMenuItem())
 
-        FanCurveController().attach(self.menu)
+        CPUProfileController().attach(self.menu)
+        self.menu.append(Gtk.SeparatorMenuItem())
+
+        GPUProfileController().attach(self.menu)
         self.menu.append(Gtk.SeparatorMenuItem())
 
         if self.boost_ctrl:
